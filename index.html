@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Relevé sous-stations CAD</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1B3A4B">
+<style>
+  :root{
+    --bleu-nuit:#1B3A4B;      /* eau de retour, entête / nav */
+    --cuivre:#C1591A;         /* conduite / action principale */
+    --cuivre-clair:#E08A4E;
+    --fond:#F6F4EF;
+    --carte:#FFFFFF;
+    --texte:#20242A;
+    --texte-att:#5B6470;
+    --bordure:#DCD7CC;
+    --bon:#3A7D44;
+    --moyen:#C9922A;
+    --mauvais:#B23A2E;
+    --rayon:6px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background:var(--fond); color:var(--texte); -webkit-tap-highlight-color:transparent;
+  }
+  header{
+    background:var(--bleu-nuit); color:#fff; padding:14px 18px;
+    display:flex; align-items:center; justify-content:space-between;
+    position:sticky; top:0; z-index:10;
+  }
+  header h1{ font-size:17px; margin:0; font-weight:600; letter-spacing:.2px; }
+  header button{
+    background:transparent; border:1px solid rgba(255,255,255,.4); color:#fff;
+    padding:6px 12px; border-radius:var(--rayon); font-size:13px;
+  }
+  main{ max-width:520px; margin:0 auto; padding:18px 16px 100px; }
+
+  .ecran{ display:none; } .ecran.actif{ display:block; }
+
+  .carte{
+    background:var(--carte); border:1px solid var(--bordure); border-radius:8px;
+    padding:16px; margin-bottom:14px;
+  }
+
+  /* Liste / recherche SST */
+  input[type=text], input[type=number], input[type=date], select, textarea{
+    width:100%; padding:12px; font-size:16px; border:1px solid var(--bordure);
+    border-radius:var(--rayon); background:#fff; color:var(--texte); margin-top:4px;
+  }
+  textarea{ min-height:80px; resize:vertical; }
+  label{ display:block; font-size:13px; color:var(--texte-att); margin-top:14px; font-weight:600; }
+  label:first-child{ margin-top:0; }
+  .champ-conditionnel{ display:none; }
+  .champ-conditionnel.visible{ display:block; }
+
+  .liste-sst{ list-style:none; margin:10px 0 0; padding:0; }
+  .liste-sst li{
+    padding:12px; border:1px solid var(--bordure); border-radius:var(--rayon);
+    margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;
+    background:#fff;
+  }
+  .liste-sst li b{ display:block; font-size:15px; }
+  .liste-sst li span{ font-size:12px; color:var(--texte-att); }
+  .liste-sst li:active{ background:var(--fond); }
+
+  .bouton-principal{
+    background:var(--cuivre); color:#fff; border:none; padding:14px;
+    border-radius:var(--rayon); font-size:16px; font-weight:600; width:100%;
+    margin-top:14px;
+  }
+  .bouton-principal:active{ background:#a3480f; }
+  .bouton-secondaire{
+    background:#fff; color:var(--bleu-nuit); border:1px solid var(--bleu-nuit);
+    padding:14px; border-radius:var(--rayon); font-size:15px; width:100%; margin-top:10px;
+  }
+  .bouton-texte{
+    background:none; border:none; color:var(--cuivre); font-size:14px; padding:10px 0;
+    text-decoration:underline;
+  }
+
+  /* Étapes / progression */
+  .progression{ display:flex; gap:5px; margin-bottom:16px; }
+  .progression span{ flex:1; height:4px; border-radius:2px; background:var(--bordure); }
+  .progression span.faite{ background:var(--cuivre); }
+
+  .titre-etape{ font-size:12px; color:var(--texte-att); font-weight:600; margin-bottom:4px; }
+  h2.titre-principal{ font-size:19px; margin:0 0 14px; }
+
+  .segment{ display:flex; gap:8px; margin-top:6px; }
+  .segment button{
+    flex:1; padding:12px; border:1px solid var(--bordure); border-radius:var(--rayon);
+    background:#fff; font-size:15px; color:var(--texte);
+  }
+  .segment button.selection{ background:var(--bleu-nuit); border-color:var(--bleu-nuit); color:#fff; }
+
+  .etat-choix{ display:flex; gap:8px; margin-top:6px; }
+  .etat-choix button{ flex:1; padding:10px; border-radius:var(--rayon); border:1px solid var(--bordure); background:#fff; font-size:14px; }
+  .etat-choix button[data-val="bon"].selection{ background:var(--bon); border-color:var(--bon); color:#fff; }
+  .etat-choix button[data-val="moyen"].selection{ background:var(--moyen); border-color:var(--moyen); color:#fff; }
+  .etat-choix button[data-val="mauvais"].selection{ background:var(--mauvais); border-color:var(--mauvais); color:#fff; }
+
+  .case{ display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--fond); }
+  .case input{ width:20px; height:20px; }
+  .case label{ margin:0; font-weight:400; color:var(--texte); font-size:15px; }
+
+  .composant-bloc{ border:1px solid var(--bordure); border-radius:var(--rayon); padding:12px; margin-top:10px; position:relative; }
+  .composant-bloc .retirer{ position:absolute; top:8px; right:8px; background:none; border:none; color:var(--mauvais); font-size:13px; }
+
+  .barre-bas{
+    position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:1px solid var(--bordure);
+    padding:10px 16px; display:flex; gap:10px; z-index:10;
+  }
+  .barre-bas button{ flex:1; padding:14px; border-radius:var(--rayon); font-size:15px; font-weight:600; border:none; }
+  .barre-bas .precedent{ background:var(--fond); color:var(--texte); border:1px solid var(--bordure); }
+  .barre-bas .suivant{ background:var(--cuivre); color:#fff; }
+
+  .ligne-releve{ display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--fond); font-size:14px; }
+  .ligne-releve span:last-child{ font-weight:600; }
+
+  .grille-photos{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:10px; }
+  .grille-photos img{ width:100%; height:90px; object-fit:cover; border-radius:var(--rayon); border:1px solid var(--bordure); }
+
+  .bandeau-etat{ font-size:13px; padding:10px 12px; border-radius:var(--rayon); margin-bottom:14px; }
+  .bandeau-etat.hors-ligne{ background:#FCEEE6; color:var(--cuivre); }
+  .bandeau-etat.brouillon{ background:#EAF1EC; color:var(--bon); }
+  .masque{ display:none !important; }
+  #connexion .carte{ margin-top:60px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1 id="titre-header">Relevé sous-stations</h1>
+  <button id="btn-deconnexion" class="masque">Changer d'utilisateur</button>
+</header>
+
+<main>
+
+  <!-- ÉCRAN CONNEXION -->
+  <section id="connexion" class="ecran actif">
+    <div class="carte">
+      <h2 class="titre-principal">Qui es-tu ?</h2>
+      <p style="font-size:13px; color:var(--texte-att); margin-top:-6px;">
+        Sert uniquement à indiquer qui a effectué chaque relevé. Aucune donnée n'est envoyée nulle part —
+        tout reste sur cet appareil jusqu'à ce que tu utilises le bouton "Exporter".
+      </p>
+      <label>Ton nom ou e-mail</label>
+      <input type="text" id="login-nom" autocomplete="username">
+      <button class="bouton-principal" id="btn-connexion">Continuer</button>
+    </div>
+  </section>
+
+  <!-- ÉCRAN ACCUEIL / LISTE DES SST -->
+  <section id="accueil" class="ecran">
+    <div id="bandeau-brouillon" class="bandeau-etat brouillon masque">
+      Un relevé était en cours sur cet appareil.
+      <button class="bouton-texte" id="btn-reprendre">Reprendre</button>
+    </div>
+    <div id="bandeau-export" class="bandeau-etat hors-ligne masque"></div>
+    <div class="carte">
+      <label>Rechercher une sous-station</label>
+      <input type="text" id="recherche-sst" placeholder="Adresse, nom du client...">
+      <ul class="liste-sst" id="liste-sst"></ul>
+      <button class="bouton-secondaire" id="btn-ajouter-sst">+ Ajouter une nouvelle sous-station</button>
+    </div>
+    <div class="carte">
+      <p style="font-size:13px; color:var(--texte-att); margin:0 0 10px;">
+        <span id="compteur-a-exporter">0</span> fiche(s) sur cet appareil.
+      </p>
+      <button class="bouton-principal" id="btn-exporter">Exporter mes relevés (.zip)</button>
+      <p style="font-size:12px; color:var(--texte-att); margin-top:8px;">
+        Envoie ensuite ce fichier par e-mail ou AirDrop au bureau.
+      </p>
+    </div>
+  </section>
+
+  <!-- ÉCRAN FORMULAIRE (étapes) -->
+  <section id="formulaire" class="ecran">
+    <div class="progression" id="barre-progression"></div>
+
+    <!-- Étape 1 : identification -->
+    <div class="carte etape" data-etape="1">
+      <div class="titre-etape">Étape 1 sur 6</div>
+      <h2 class="titre-principal">Identification</h2>
+      <label>Adresse</label>
+      <input type="text" id="f-adresse">
+      <label>N° de parcelle</label>
+      <input type="text" id="f-parcelle">
+      <label>Nom du client</label>
+      <input type="text" id="f-client">
+    </div>
+
+    <!-- Étape 2 : caractéristiques générales -->
+    <div class="carte etape" data-etape="2">
+      <div class="titre-etape">Étape 2 sur 6</div>
+      <h2 class="titre-principal">Caractéristiques de la SST</h2>
+      <label>État général</label>
+      <div class="etat-choix" data-champ="f-etat-general">
+        <button type="button" data-val="bon">Bon</button>
+        <button type="button" data-val="moyen">Moyen</button>
+        <button type="button" data-val="mauvais">Mauvais</button>
+      </div>
+      <label>Marque échangeur</label>
+      <input type="text" id="f-ech-marque">
+      <label>Type échangeur</label>
+      <input type="text" id="f-ech-type">
+      <label>Puissance nominale (kW)</label>
+      <input type="number" id="f-ech-puissance">
+      <label>DN conduites d'introduction</label>
+      <select id="f-dn-intro">
+        <option value="">— Choisir —</option>
+        <option>DN15</option><option>DN20</option><option>DN25</option><option>DN32</option>
+        <option>DN40</option><option>DN50</option><option>DN65</option><option>DN80</option>
+        <option>DN100</option><option>DN125</option><option>DN150</option>
+      </select>
+      <label>Vanne d'isolement présente à l'intro</label>
+      <div class="segment" data-champ="f-vanne-isolement">
+        <button type="button" data-val="oui">Oui</button>
+        <button type="button" data-val="non">Non</button>
+      </div>
+      <label>État isolation</label>
+      <div class="etat-choix" data-champ="f-etat-isolation">
+        <button type="button" data-val="bon">Bon</button>
+        <button type="button" data-val="moyen">Moyen</button>
+        <button type="button" data-val="mauvais">Mauvais</button>
+        <button type="button" data-val="absent">Absent</button>
+      </div>
+    </div>
+
+    <!-- Étape 3 : ECS -->
+    <div class="carte etape" data-etape="3">
+      <div class="titre-etape">Étape 3 sur 6</div>
+      <h2 class="titre-principal">Eau chaude sanitaire</h2>
+      <label>ECS séparé</label>
+      <div class="segment" data-champ="f-ecs-separe">
+        <button type="button" data-val="oui">Oui</button>
+        <button type="button" data-val="non">Non</button>
+      </div>
+      <div id="bloc-ecs" class="champ-conditionnel">
+        <label>Comment l'ECS est-elle produite ?</label>
+        <select id="f-ecs-type">
+          <option value="">— Choisir —</option>
+          <option>Ballon avec échangeur</option>
+          <option>Chauffe-eau électrique</option>
+          <option>Production instantanée</option>
+          <option>Autre</option>
+        </select>
+        <label>Volume du ballon ECS (L)</label>
+        <input type="number" id="f-ecs-volume">
+      </div>
+    </div>
+
+    <!-- Étape 4 : composants + groupes secondaires -->
+    <div class="carte etape" data-etape="4">
+      <div class="titre-etape">Étape 4 sur 6</div>
+      <h2 class="titre-principal">Composants</h2>
+      <div id="liste-composants"></div>
+      <button type="button" class="bouton-secondaire" id="btn-ajouter-composant">+ Ajouter un composant</button>
+
+      <label style="margin-top:22px;">Groupes secondaires desservis</label>
+      <div class="case"><input type="checkbox" id="grp-chauffage"><label for="grp-chauffage">Chauffage</label></div>
+      <div class="case"><input type="checkbox" id="grp-ventilation"><label for="grp-ventilation">Ventilation</label></div>
+      <div class="case"><input type="checkbox" id="grp-ecs"><label for="grp-ecs">ECS</label></div>
+      <div class="case"><input type="checkbox" id="grp-autre"><label for="grp-autre">Autre</label></div>
+    </div>
+
+    <!-- Étape 5 : compteur d'énergie -->
+    <div class="carte etape" data-etape="5">
+      <div class="titre-etape">Étape 5 sur 6</div>
+      <h2 class="titre-principal">Relevé du compteur d'énergie</h2>
+      <div id="historique-compteur"></div>
+      <label>Date du relevé</label>
+      <input type="date" id="f-compteur-date">
+      <label>Valeur (kWh)</label>
+      <input type="number" id="f-compteur-valeur">
+      <button type="button" class="bouton-secondaire" id="btn-ajouter-releve">+ Enregistrer ce relevé</button>
+    </div>
+
+    <!-- Étape 6 : photos + remarque -->
+    <div class="carte etape" data-etape="6">
+      <div class="titre-etape">Étape 6 sur 6</div>
+      <h2 class="titre-principal">Photos et remarque</h2>
+      <label>Ajouter des photos</label>
+      <input type="file" id="f-photos" accept="image/*" capture="environment" multiple>
+      <div class="grille-photos" id="grille-photos"></div>
+      <label>Remarque supplémentaire</label>
+      <textarea id="f-remarque"></textarea>
+      <button class="bouton-principal" id="btn-terminer">Enregistrer et terminer</button>
+    </div>
+
+    <div class="barre-bas">
+      <button class="precedent" id="btn-precedent">Précédent</button>
+      <button class="suivant" id="btn-suivant">Suivant</button>
+    </div>
+  </section>
+
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+// ==========================================================================
+// APPLICATION DE RELEVÉ DES SST — version 100% locale, sans serveur.
+// Toutes les données (fiches, relevés de compteur, photos) sont stockées
+// dans IndexedDB, directement sur l'appareil. Rien n'est envoyé sur le
+// réseau — le seul moyen de faire sortir les données est le bouton
+// "Exporter mes relevés", qui génère un fichier .zip à envoyer manuellement.
+// ==========================================================================
+
+const NOM_BASE = 'releve_sst_local';
+const VERSION_BASE = 1;
+let db;
+let utilisateurLocal = localStorage.getItem('utilisateurLocal') || null;
+
+let sstId = null;
+let fiche = {};
+let composants = [];
+let etapeActuelle = 1;
+const NB_ETAPES = 6;
+let toutesLesSst = [];
+
+const $ = (id) => document.getElementById(id);
+const afficherEcran = (id) => {
+  document.querySelectorAll('.ecran').forEach(e => e.classList.remove('actif'));
+  $(id).classList.add('actif');
+};
+const genererId = () => (crypto.randomUUID ? crypto.randomUUID() :
+  'id-' + Date.now() + '-' + Math.random().toString(16).slice(2));
+
+// ==========================================================================
+// INDEXEDDB — ouverture et petites fonctions d'accès
+// ==========================================================================
+function ouvrirBase() {
+  return new Promise((resolve, reject) => {
+    const requete = indexedDB.open(NOM_BASE, VERSION_BASE);
+    requete.onupgradeneeded = () => {
+      const base = requete.result;
+      if (!base.objectStoreNames.contains('sst')) {
+        base.createObjectStore('sst', { keyPath: 'id' });
+      }
+      if (!base.objectStoreNames.contains('compteur')) {
+        const magasin = base.createObjectStore('compteur', { keyPath: 'id', autoIncrement: true });
+        magasin.createIndex('sstId', 'sstId');
+      }
+      if (!base.objectStoreNames.contains('photos')) {
+        const magasin = base.createObjectStore('photos', { keyPath: 'id', autoIncrement: true });
+        magasin.createIndex('sstId', 'sstId');
+      }
+    };
+    requete.onsuccess = () => resolve(requete.result);
+    requete.onerror = () => reject(requete.error);
+  });
+}
+
+function magasin(nom, mode = 'readonly') {
+  return db.transaction(nom, mode).objectStore(nom);
+}
+function promesse(requete) {
+  return new Promise((resolve, reject) => {
+    requete.onsuccess = () => resolve(requete.result);
+    requete.onerror = () => reject(requete.error);
+  });
+}
+
+async function listerSst() {
+  return promesse(magasin('sst').getAll());
+}
+async function obtenirSst(id) {
+  return promesse(magasin('sst').get(id));
+}
+async function sauvegarderSstLocal(objetFiche) {
+  await promesse(magasin('sst', 'readwrite').put(objetFiche));
+}
+async function listerCompteur(idSst) {
+  const index = magasin('compteur').index('sstId');
+  const lignes = await promesse(index.getAll(idSst));
+  return lignes.sort((a, b) => (a.date < b.date ? 1 : -1));
+}
+async function ajouterCompteurLocal(idSst, date, valeur) {
+  await promesse(magasin('compteur', 'readwrite').add({
+    sstId: idSst, date, valeur, relevePar: utilisateurLocal, creeLe: new Date().toISOString()
+  }));
+}
+async function listerPhotos(idSst) {
+  const index = magasin('photos').index('sstId');
+  return promesse(index.getAll(idSst));
+}
+async function ajouterPhotoLocale(idSst, blob, nomFichier) {
+  await promesse(magasin('photos', 'readwrite').add({
+    sstId: idSst, blob, nomFichier, date: new Date().toISOString().slice(0,10), ajouteePar: utilisateurLocal
+  }));
+}
+
+// ==========================================================================
+// COMPRESSION DES PHOTOS avant stockage (limite le poids sur l'appareil et
+// à l'export : redimensionnées à 1600px de large maximum, JPEG qualité 0.75)
+// ==========================================================================
+function compresserImage(fichier, largeurMax = 1600, qualite = 0.75) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const url = URL.createObjectURL(fichier);
+    image.onload = () => {
+      const echelle = Math.min(1, largeurMax / image.width);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(image.width * echelle);
+      canvas.height = Math.round(image.height * echelle);
+      canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((blob) => {
+        URL.revokeObjectURL(url);
+        blob ? resolve(blob) : reject(new Error('Compression échouée'));
+      }, 'image/jpeg', qualite);
+    };
+    image.onerror = reject;
+    image.src = url;
+  });
+}
+
+// ==========================================================================
+// "CONNEXION" — juste un nom/e-mail local, aucune vérification réseau
+// ==========================================================================
+$('btn-connexion').addEventListener('click', () => {
+  const nom = $('login-nom').value.trim();
+  if (!nom) return;
+  utilisateurLocal = nom;
+  localStorage.setItem('utilisateurLocal', nom);
+  entrerDansApp();
+});
+$('btn-deconnexion').addEventListener('click', () => {
+  utilisateurLocal = null;
+  localStorage.removeItem('utilisateurLocal');
+  $('btn-deconnexion').classList.add('masque');
+  afficherEcran('connexion');
+});
+
+async function entrerDansApp() {
+  $('btn-deconnexion').classList.remove('masque');
+  afficherEcran('accueil');
+  await chargerListeSst();
+  verifierBrouillonLocal();
+}
+
+(async () => {
+  db = await ouvrirBase();
+  if (utilisateurLocal) await entrerDansApp(); else afficherEcran('connexion');
+})();
+
+// ==========================================================================
+// ACCUEIL — recherche / sélection / création de SST
+// ==========================================================================
+async function chargerListeSst() {
+  toutesLesSst = await listerSst();
+  toutesLesSst.sort((a, b) => (a.adresse || '').localeCompare(b.adresse || ''));
+  dessinerListeSst(toutesLesSst);
+  $('compteur-a-exporter').textContent = toutesLesSst.length;
+}
+
+function dessinerListeSst(liste) {
+  const ul = $('liste-sst');
+  ul.innerHTML = '';
+  liste.forEach(sst => {
+    const li = document.createElement('li');
+    li.innerHTML = `<div><b>${sst.adresse || '(sans adresse)'}</b><span>${sst.client || ''}</span></div>`;
+    li.addEventListener('click', () => ouvrirSst(sst.id));
+    ul.appendChild(li);
+  });
+}
+
+$('recherche-sst').addEventListener('input', (e) => {
+  const q = e.target.value.toLowerCase();
+  dessinerListeSst(toutesLesSst.filter(s =>
+    (s.adresse || '').toLowerCase().includes(q) || (s.client || '').toLowerCase().includes(q)
+  ));
+});
+
+$('btn-ajouter-sst').addEventListener('click', () => {
+  sstId = null;
+  fiche = {};
+  composants = [];
+  $('f-adresse').value = $('recherche-sst').value || '';
+  demarrerFormulaire();
+});
+
+async function ouvrirSst(id) {
+  sstId = id;
+  fiche = await obtenirSst(id) || {};
+  composants = fiche.composants || [];
+  demarrerFormulaire();
+  await chargerHistoriqueCompteur();
+  await chargerPhotos();
+}
+
+// ==========================================================================
+// FORMULAIRE — navigation par étapes
+// ==========================================================================
+function demarrerFormulaire() {
+  etapeActuelle = 1;
+  remplirChampsDepuisFiche();
+  afficherEcran('formulaire');
+  dessinerEtape();
+}
+
+function dessinerEtape() {
+  document.querySelectorAll('.etape').forEach(e => e.style.display = 'none');
+  document.querySelector(`.etape[data-etape="${etapeActuelle}"]`).style.display = 'block';
+
+  const barre = $('barre-progression');
+  barre.innerHTML = '';
+  for (let i = 1; i <= NB_ETAPES; i++) {
+    const s = document.createElement('span');
+    if (i <= etapeActuelle) s.classList.add('faite');
+    barre.appendChild(s);
+  }
+  $('btn-precedent').style.visibility = etapeActuelle === 1 ? 'hidden' : 'visible';
+  $('btn-suivant').textContent = etapeActuelle === NB_ETAPES ? 'Terminer' : 'Suivant';
+}
+
+$('btn-precedent').addEventListener('click', () => {
+  if (etapeActuelle > 1) { etapeActuelle--; dessinerEtape(); window.scrollTo(0,0); }
+});
+
+$('btn-suivant').addEventListener('click', async () => {
+  lireChampsDansFiche();
+  await sauvegarderFiche();       // écrit dans IndexedDB à chaque étape
+  sauvegarderBrouillonLocal();
+  if (etapeActuelle < NB_ETAPES) {
+    etapeActuelle++;
+    dessinerEtape();
+    window.scrollTo(0,0);
+  } else {
+    terminer();
+  }
+});
+
+document.querySelectorAll('.segment, .etat-choix').forEach(groupe => {
+  groupe.addEventListener('click', (e) => {
+    if (e.target.tagName !== 'BUTTON') return;
+    groupe.querySelectorAll('button').forEach(b => b.classList.remove('selection'));
+    e.target.classList.add('selection');
+  });
+});
+
+document.querySelector('[data-champ="f-ecs-separe"]').addEventListener('click', (e) => {
+  if (e.target.dataset.val === 'oui') $('bloc-ecs').classList.add('visible');
+  else { $('bloc-ecs').classList.remove('visible'); $('f-ecs-type').value=''; $('f-ecs-volume').value=''; }
+});
+
+// ==========================================================================
+// COMPOSANTS (étape 4)
+// ==========================================================================
+function dessinerComposants() {
+  const zone = $('liste-composants');
+  zone.innerHTML = '';
+  composants.forEach((c, i) => {
+    const div = document.createElement('div');
+    div.className = 'composant-bloc';
+    div.innerHTML = `
+      <button type="button" class="retirer" data-i="${i}">Retirer</button>
+      <label>Type</label>
+      <select data-champ="type" data-i="${i}">
+        <option value="">— Choisir —</option>
+        <option ${c.type==='Pompe'?'selected':''}>Pompe</option>
+        <option ${c.type==='Vanne 2 voies'?'selected':''}>Vanne 2 voies</option>
+        <option ${c.type==='Compteur'?'selected':''}>Compteur</option>
+        <option ${c.type==='Automate'?'selected':''}>Automate</option>
+        <option ${c.type==='Autre'?'selected':''}>Autre</option>
+      </select>
+      <label>Marque</label>
+      <input type="text" data-champ="marque" data-i="${i}" value="${c.marque||''}">
+      <label>Modèle</label>
+      <input type="text" data-champ="modele" data-i="${i}" value="${c.modele||''}">
+      <label>N° de série</label>
+      <input type="text" data-champ="serie" data-i="${i}" value="${c.serie||''}">
+    `;
+    zone.appendChild(div);
+  });
+  zone.querySelectorAll('[data-champ]').forEach(el => {
+    el.addEventListener('input', (e) => {
+      composants[e.target.dataset.i][e.target.dataset.champ] = e.target.value;
+    });
+  });
+  zone.querySelectorAll('.retirer').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      composants.splice(e.target.dataset.i, 1);
+      dessinerComposants();
+    });
+  });
+}
+$('btn-ajouter-composant').addEventListener('click', () => {
+  composants.push({ type:'', marque:'', modele:'', serie:'' });
+  dessinerComposants();
+});
+
+// ==========================================================================
+// COMPTEUR D'ÉNERGIE (étape 5) — historique par date, jamais écrasé
+// ==========================================================================
+async function chargerHistoriqueCompteur() {
+  const zone = $('historique-compteur');
+  if (!sstId) { zone.innerHTML = ''; return; }
+  const releves = await listerCompteur(sstId);
+  zone.innerHTML = releves.length === 0
+    ? '<p style="font-size:13px;color:var(--texte-att);">Aucun relevé enregistré.</p>' : '';
+  releves.forEach(r => {
+    zone.innerHTML += `<div class="ligne-releve"><span>${r.date}</span><span>${r.valeur} kWh</span></div>`;
+  });
+}
+
+$('btn-ajouter-releve').addEventListener('click', async () => {
+  if (!sstId) { lireChampsDansFiche(); await sauvegarderFiche(); }
+  const date = $('f-compteur-date').value || new Date().toISOString().slice(0,10);
+  const valeur = parseFloat($('f-compteur-valeur').value);
+  if (isNaN(valeur)) return;
+  await ajouterCompteurLocal(sstId, date, valeur);
+  $('f-compteur-valeur').value = '';
+  chargerHistoriqueCompteur();
+});
+
+// ==========================================================================
+// PHOTOS (étape 6) — compressées avant stockage, liées automatiquement
+// ==========================================================================
+$('f-photos').addEventListener('change', async (e) => {
+  if (!sstId) { lireChampsDansFiche(); await sauvegarderFiche(); }
+  const boutonLabel = $('f-photos').nextElementSibling;
+  for (const fichierOriginal of e.target.files) {
+    const blobCompresse = await compresserImage(fichierOriginal);
+    const nomFichier = `${Date.now()}.jpg`;
+    await ajouterPhotoLocale(sstId, blobCompresse, nomFichier);
+  }
+  chargerPhotos();
+});
+
+async function chargerPhotos() {
+  const zone = $('grille-photos');
+  if (!sstId) { zone.innerHTML = ''; return; }
+  const photos = await listerPhotos(sstId);
+  zone.innerHTML = '';
+  photos.forEach(p => {
+    const img = document.createElement('img');
+    img.src = URL.createObjectURL(p.blob);
+    zone.appendChild(img);
+  });
+}
+
+// ==========================================================================
+// LECTURE / ÉCRITURE DES CHAMPS DU FORMULAIRE
+// ==========================================================================
+function valeurSegment(champ) {
+  const bouton = document.querySelector(`[data-champ="${champ}"] button.selection`);
+  return bouton ? bouton.dataset.val : '';
+}
+function selectionnerSegment(champ, valeur) {
+  document.querySelectorAll(`[data-champ="${champ}"] button`).forEach(b => {
+    b.classList.toggle('selection', b.dataset.val === valeur);
+  });
+}
+
+function lireChampsDansFiche() {
+  fiche.adresse = $('f-adresse').value;
+  fiche.parcelle = $('f-parcelle').value;
+  fiche.client = $('f-client').value;
+
+  fiche.etatGeneral = valeurSegment('f-etat-general');
+  fiche.echangeurMarque = $('f-ech-marque').value;
+  fiche.echangeurType = $('f-ech-type').value;
+  fiche.echangeurPuissance = $('f-ech-puissance').value ? parseFloat($('f-ech-puissance').value) : null;
+  fiche.dnIntro = $('f-dn-intro').value;
+  fiche.vanneIsolement = valeurSegment('f-vanne-isolement');
+  fiche.etatIsolation = valeurSegment('f-etat-isolation');
+
+  fiche.ecsSepare = valeurSegment('f-ecs-separe');
+  fiche.ecsType = $('f-ecs-type').value;
+  fiche.ecsVolume = $('f-ecs-volume').value ? parseFloat($('f-ecs-volume').value) : null;
+
+  fiche.composants = composants;
+  fiche.groupesSecondaires = ['chauffage','ventilation','ecs','autre']
+    .filter(g => $('grp-'+g).checked);
+
+  fiche.remarque = $('f-remarque').value;
+}
+
+function remplirChampsDepuisFiche() {
+  $('f-adresse').value = fiche.adresse || '';
+  $('f-parcelle').value = fiche.parcelle || '';
+  $('f-client').value = fiche.client || '';
+
+  selectionnerSegment('f-etat-general', fiche.etatGeneral || '');
+  $('f-ech-marque').value = fiche.echangeurMarque || '';
+  $('f-ech-type').value = fiche.echangeurType || '';
+  $('f-ech-puissance').value = fiche.echangeurPuissance ?? '';
+  $('f-dn-intro').value = fiche.dnIntro || '';
+  selectionnerSegment('f-vanne-isolement', fiche.vanneIsolement || '');
+  selectionnerSegment('f-etat-isolation', fiche.etatIsolation || '');
+
+  selectionnerSegment('f-ecs-separe', fiche.ecsSepare || '');
+  $('bloc-ecs').classList.toggle('visible', fiche.ecsSepare === 'oui');
+  $('f-ecs-type').value = fiche.ecsType || '';
+  $('f-ecs-volume').value = fiche.ecsVolume ?? '';
+
+  composants = fiche.composants || [];
+  dessinerComposants();
+  ['chauffage','ventilation','ecs','autre'].forEach(g => {
+    $('grp-'+g).checked = (fiche.groupesSecondaires || []).includes(g);
+  });
+
+  $('f-compteur-date').value = new Date().toISOString().slice(0,10);
+  $('f-remarque').value = fiche.remarque || '';
+}
+
+// ==========================================================================
+// SAUVEGARDE (locale, IndexedDB)
+// ==========================================================================
+async function sauvegarderFiche() {
+  const maintenant = new Date().toISOString();
+  if (!sstId) {
+    sstId = genererId();
+    fiche.id = sstId;
+    fiche.origine = 'ajout_terrain';
+    fiche.creeLe = maintenant;
+  }
+  fiche.modifiePar = utilisateurLocal;
+  fiche.modifieLe = maintenant;
+  await sauvegarderSstLocal(fiche);
+}
+
+function sauvegarderBrouillonLocal() {
+  localStorage.setItem('brouillon_sst', JSON.stringify({ sstId, etapeActuelle }));
+}
+function verifierBrouillonLocal() {
+  const brut = localStorage.getItem('brouillon_sst');
+  if (brut) $('bandeau-brouillon').classList.remove('masque');
+}
+$('btn-reprendre').addEventListener('click', async () => {
+  const d = JSON.parse(localStorage.getItem('brouillon_sst'));
+  sstId = d.sstId;
+  fiche = (await obtenirSst(sstId)) || {};
+  composants = fiche.composants || [];
+  etapeActuelle = d.etapeActuelle;
+  remplirChampsDepuisFiche();
+  afficherEcran('formulaire');
+  dessinerEtape();
+  await chargerHistoriqueCompteur();
+  await chargerPhotos();
+});
+
+function terminer() {
+  localStorage.removeItem('brouillon_sst');
+  sstId = null; fiche = {}; composants = [];
+  afficherEcran('accueil');
+  chargerListeSst();
+  $('bandeau-brouillon').classList.add('masque');
+}
+
+// ==========================================================================
+// EXPORT — regroupe toutes les fiches, relevés et photos dans un .zip
+// ==========================================================================
+$('btn-exporter').addEventListener('click', async () => {
+  const bandeau = $('bandeau-export');
+  bandeau.classList.remove('masque');
+  bandeau.textContent = 'Préparation du fichier...';
+  $('btn-exporter').disabled = true;
+
+  try {
+    const zip = new JSZip();
+    const toutesLesFiches = await listerSst();
+    const exportJson = {
+      exportePar: utilisateurLocal,
+      exporteLe: new Date().toISOString(),
+      sst: [],
+    };
+
+    for (const f of toutesLesFiches) {
+      const releves = await listerCompteur(f.id);
+      const photos = await listerPhotos(f.id);
+      const cheminsPhotos = [];
+
+      photos.forEach((p, i) => {
+        const chemin = `photos/${f.id}/${p.nomFichier || (i + '.jpg')}`;
+        zip.file(chemin, p.blob);
+        cheminsPhotos.push(chemin);
+      });
+
+      exportJson.sst.push({
+        ...f,
+        releves: releves.map(r => ({ date: r.date, valeur: r.valeur, relevePar: r.relevePar })),
+        photos: cheminsPhotos,
+      });
+    }
+
+    zip.file('donnees.json', JSON.stringify(exportJson, null, 2));
+
+    const contenu = await zip.generateAsync({ type: 'blob' }, (metadata) => {
+      bandeau.textContent = `Préparation du fichier... ${Math.round(metadata.percent)}%`;
+    });
+
+    const horodatage = new Date().toISOString().slice(0,16).replace(/[-:T]/g, '');
+    const nomFichier = `releve_sst_${utilisateurLocal.replace(/[^a-zA-Z0-9]/g,'_')}_${horodatage}.zip`;
+
+    const lien = document.createElement('a');
+    lien.href = URL.createObjectURL(contenu);
+    lien.download = nomFichier;
+    document.body.appendChild(lien);
+    lien.click();
+    lien.remove();
+
+    bandeau.textContent = `Export terminé : ${nomFichier}. Envoie-le au bureau par e-mail ou AirDrop.`;
+  } catch (e) {
+    bandeau.textContent = "Erreur lors de l'export : " + e.message;
+  } finally {
+    $('btn-exporter').disabled = false;
+  }
+});
+</script>
+
+</body>
+</html>
